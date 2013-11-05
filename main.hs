@@ -3,23 +3,29 @@
 module Main where
   import Bio.VariantCall.SegregationBias
 
+  import Control.Applicative (optional)
   import Control.Monad
+  import Control.Monad.IO.Class
 
   import Data.Attoparsec.ByteString.Char8
   import qualified Data.ByteString.Char8 as B
   import qualified Data.Vector.Unboxed as V
+  import Data.Conduit
+  import qualified Data.Conduit.Binary as CB
+  import qualified Data.Conduit.List as CL
+
+  --import Debug.Trace (traceShow)
 
   import System.Console.GetOpt
   import System.Environment (getArgs)
-  import System.IO
 
   defaultOptions :: Options
   defaultOptions = Options {
       optVariantSitesAlpha = 1
-    , optVariantSitesBeta = 5
+    , optVariantSitesBeta = 4
     , optTrueVariantRate = 0.95
     , optFalseVariantRateAlpha = 1
-    , optFalseVariantRateBeta = 5
+    , optFalseVariantRateBeta = 4
     , optVariantFreq = 0.5
   }
 
@@ -36,7 +42,7 @@ module Main where
           "Alpha parameter for the Beta distributed probability of seeing a variant call when no variant is present."
       , Option [] ["P_F_beta"] (ReqArg (\n o -> o { optFalseVariantRateAlpha = read n }) "p_F_beta")
           "Beta parameter for the Beta distributed probability of seeing a variant call when no variant is present."
-      , Option [] ["V"] (ReqArg (\n o -> o { optTrueVariantRate = read n }) "P(V)")
+      , Option [] ["V"] (ReqArg (\n o -> o { optVariantFreq = read n }) "P(V)")
           "Prior likelihood on a variant being present at a given site." 
     ]
 
@@ -47,24 +53,26 @@ module Main where
 
   parseSample :: Parser Sample
   parseSample = do
-      a <- decimal
-      char '\t'
-      b <- decimal
-      return $ Sample (a, b)
+      d <- decimal
+      _ <- char '\t'
+      o <- decimal
+      optional $ char '\t'
+      return $ Sample (o, o+d)
     
   parseSite :: Parser Site
   parseSite = do
     skipWhile (not . (== '\t'))
-    char '\t'
+    _ <- char '\t'
     chr <- decimal
-    char '\t'
+    _ <- char '\t'
     id' <- decimal
-    char '\t'
+    _ <- char '\t'
     samples <- many1 parseSample
     return $ Site (chr) (id') (V.fromList samples)
 
-  processLine :: B.ByteString -> Either String String
-  processLine bs = liftM show $ parseOnly parseSite bs
+  processLine :: Options -> B.ByteString -> Either String Double
+  processLine opts bs = liftM go $ parseOnly parseSite bs
+    where go (Site _ _ samples) = probVariantGivenObs opts samples
 
   main :: IO ()
   main = do
@@ -74,10 +82,11 @@ module Main where
       (_,_,errs) -> putStrLn (concat errs ++ "\n" ++ usage)
   
   processFile :: String -> Options -> IO ()
-  processFile fn opts = do
-      file <- openFile fn ReadMode
-      line <- B.hGetLine file
-      let res = processLine line
-      case res of
-        Right a -> putStrLn a
+  processFile fn opts = let
+      source = CB.sourceFile fn $= CB.lines
+      process = CL.map $ processLine opts
+      sink = CL.mapM_ $ liftIO . showResult
+      showResult = \case
+        Right a -> putStrLn $ show a
         Left b -> putStrLn $ "Error: " ++ b
+    in runResourceT $ source $= process $$ sink

@@ -21,8 +21,15 @@ executable segbias
   -- other-extensions:    
   build-depends:       base >=4.6 && <4.7
                      , bytestring
+                     , conduit
                      , vector
                      , attoparsec
+                     , integration
+                     , math-functions
                      , statistics >= 0.10.5.1
+                     , transformers
   -- hs-source-dirs:      
   default-language:    Haskell2010
+  ghc-options: -O3 -Wall -funbox-strict-fields -threaded -rtsopts -with-rtsopts=-N
+  if impl(ghc >= 6.8)
+    ghc-options: -fwarn-tabs
