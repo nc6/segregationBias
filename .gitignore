@@ -1,1 +1,3 @@
 dist
+report/*
+!report/*.tex

@@ -1,0 +1,91 @@
+\documentclass[10pt]{article}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage[margin=2.5cm]{geometry}
+\newcounter{_parnum}
+\newcommand{\parnum}{\bfseries\arabic{_parnum}}
+\newcommand{\npar}{%
+	\par
+	\refstepcounter{_parnum}%
+	\leavevmode\marginpar[\hfill\parnum]{\parnum}%
+	}
+\author{Nicholas Clarke}
+\title{Bayesian Variant Call QC}
+\begin{document}
+\maketitle
+\section{Haploidy}
+\npar Suppose we have $N$ haplotype samples with depth $d_i$ for $i\in{1\dots N}$, and we have observed $\sigma_i$ copies of the non-reference variant $V$ in sample $i$. We are interested in the probability that $V$ is a true variant:
+\[ P(V|\bm\sigma) = \frac{P(\bm\sigma | V)P(V)}{P(\bm\sigma)},\]
+where $\bm\sigma = \left\{\sigma_1 \dots \sigma_N\right\}$.
+\npar Since the samples are a priori independent, we have that $P(\bm\sigma|V) = \prod_{i = 1}^{N} P(\sigma_i | V) $. Supposing $V$ is a true variant, it should occur in some subset $\mathcal{M}\subseteq \{1\dots N\}$ of size $M$ of the samples, and we can decompose:
+\[
+P(\bm\sigma|V, \mathcal{M}) = \prod_{i\in \mathcal{M}} P(\sigma_i | V_i) \cdot \prod_{i \notin \mathcal{M}} P(\sigma_i | \neg V_i)
+\]
+where $V_i$ denotes the true variant occurring in sample $i$.
+\npar For each $i\in \mathcal{M}$, we consider $\sigma_i$ to be the result of a draw from a $B(d_i, p_T)$ distribution where $p_T$ represents the probability of seeing a variant read given the presence of a true variant in sample $i$. Likewise, we for $i\notin \mathcal{M}$ we consider $\sigma_i$ to be a draw from $B(d_i, p_F)$.
+\npar The problem here is that we have to sum over all possible sizes $M$ and all possible subsets $\mathcal{M}$ of size $M$, which is infeasible. So suppose instead that the true variant $V$ occurs independently with some probability $p_M \simeq \frac{M}{N}$ in each sample. Then we have:
+\begin{align}
+P(\bm\sigma |V) &= \sum_{M = 1}^{N} P(\bm\sigma | M, V)P(M|V) \nonumber \\
+&= \sum_{M=1}^{N}\prod_{i = 1}^{N} P(\sigma_i|M, V)P(M|V) \nonumber \\
+&= \sum_{M=1}^{N} P(M|V)\prod_{i=1}^{N}\left(P(\sigma_i|V_i, M, V)P(V_i|M,V) + P(\sigma_i | \neg V_i, M, V)P(\neg V_i, M, V)\right) \nonumber \\
+&= \sum_{M=1}^{N} P(M|V)\prod_{i=1}^{N}\binom{d_i}{\sigma_i}\left(p_M{p_T}^{\sigma_i}(1-p_T)^{d_i - \sigma_i} + (1-p_M){p_F}^{\sigma_i}(1-p_F)^{d_i - \sigma_i} \right).
+\end{align}
+\npar We need to get a handle on $P(M|V)$, $P(V)$ and $P(\bm\sigma)$. For the latter, we have:
+\begin{align*}
+P(\bm\sigma) &= P(\bm\sigma | V)P(V) + P(\bm\sigma | \neg V)P(\neg V) \\
+P(\bm\sigma | \neg V) &= \prod_{i = 1}^{N}\binom{d_i}{\sigma_i} {p_F}^{\sigma_i} (1-p_F)^{d_i - \sigma_i}.
+\end{align*}
+As a prior on $P(V)$ we empirically take the proportion of true variant calls. Finally we need to model $P(M|V)$. We want a distribution on ${1,\dots,M}$ and intuition suggests that we expect to see lots of variants present in a few samples and few variants present in large numbers of samples above $M/2$. For convenience, we model $M|V$ as a Beta-binomial distribution with shape parameters chosen to fit our intuition.
+\npar $p_T$ and $p_F$ reflect our noise model (how likely we are to see a variant given a true variant exists or not, respectively). Setting $p_T = 1$ and $p_F = 0$ would reflect perfect confidence in calls. We may initially wish to select 'likely' values for these, though a more principled approach would be to equip them with a Beta prior and evaluate a posterior distribution on training data.
+\subsection{A prior distribution on $p_F$}
+\npar It was suggested that there would be significant benefit to considering a non-point prior at least on $p_F$, since there are a small number of sites in the genome subject to considerably higher error likelihood. This is not too onerous. We consider that $\sigma_i | V,M,\neg V_i,p_F \sim B(d_i, p_F)$ where $p_F \sim \mathrm{Beta}(\alpha_F, \beta_F)$. Then $\sigma_i | V,M,\neg V_i, \alpha_F, \beta_F \sim \mathrm{BetaBinomial}(\alpha + \sigma_i, \beta + d_i - \sigma_i)$, and we have:
+\[
+P(\sigma_i | V,M,\neg V_i) = \binom{d_i}{\sigma_i}\frac{B(\alpha_F + \sigma_i, \beta_F + d_i - \sigma_i)}{B(\alpha_F, \beta_F)},
+\]
+and
+\[
+P(\bm\sigma | \neg V) = \prod_{i = 1}^{N}\binom{d_i}{\sigma_i}\frac{B(\alpha_F + \sigma_i, \beta_F + d_i - \sigma_i)}{B(\alpha_F, \beta_F)}.
+\]
+\npar For the sake of symmetry, we should probably do the same on $p_T$, although this is perhaps less immediately useful. If we choose to do this, the results are obviously similar.
+\section{Diploidy}
+\npar We want to extend this to diplotypes. Following RD's example, we let $M$ be the number of variant alleles and $p_M = \frac{M}{2N}$. For a heterozygous individual, each read is equally likely to be from the reference or variant allele, with respective probabilities of showing a variant $p_F$ and $p_T$. The total probability of showing a variant is therefore $\frac{1}{2}(p_T + p_F)$, and we get that
+\begin{align*}
+P(\sigma_i | V_i,M,V,p_F,\mathrm{HET}) &= \frac{1}{2^{d_i}}\binom{d_i}{\sigma_i}(p_T + p_F)^{\sigma_i}(1-p_T-p_F)^{d_i - \sigma_i},
+\end{align*}
+and for a homozygous non-reference individual we have:
+\begin{align*}
+P(\sigma_i | V_i,M,V,\mathrm{HNR}) &= \binom{d_i}{\sigma_i}(p_T)^{\sigma_i}(1-p_T)^{d_i - \sigma_i}.
+\end{align*}
+\npar Unfortunately, the affine transformation to $p_F$ destroys the nice properties of having a Beta prior, and so this does not so readily accept the prior over $p_F$ in a nice form. We are instead left with the following for a heterozygous individual:
+\[
+P(\sigma_i | V_i,M,V,\mathrm{HET}) = \frac{1}{2^{d_i -1} B(\alpha_F, \beta_F)}\binom{d_i}{\sigma_i}\int_{p_F}\! (p_T + p_F)^{\sigma_i}(1-p_T-p_F)^{d_i - \sigma_i}(2p_F -p_T)^{\alpha_F -1}(1+p_T-2p_F)^{\beta_F -1}\, \mathrm{d} p_F.
+\]
+\npar We may instead choose to take a MAP estimator for $p_F$ at each sample $i$.
+
+\npar Assuming $V_i$ (that $V$ is a true variant which exists in sample $i$), we assume HWE such that:
+\begin{align}
+P(\sigma_i | V_i, M, V) &= P(\sigma_i|V_i,M,V,\mathrm{HET})P(\mathrm{HET}) + P(\sigma_i|V_i,M,V,\mathrm{HNR})P(\mathrm{HNR}) \nonumber \\ 
+&= 2(1-p_M)P(\sigma_i|V_i,M,V,\mathrm{HET}) + p_{M}P(\sigma_i|V_i,M,V,\mathrm{HNR}) \label{eq:obsGivenVariant}
+\end{align}
+If $V$ does not occur as a true variant in sample $i$, then the probability of seeing a variant allele is independent of zygocity, and hence we have:
+\begin{equation}
+P(\sigma_i | \neg V_i, M, V) = \binom{d_i}{\sigma_i}\frac{B(\alpha_F + \sigma_i, \beta_F + d_i - \sigma_i)}{B(\alpha_F, \beta_F)} \label{eq:obsGivenNoVariant}
+\end{equation}
+\npar Putting this all together, we get:
+\begin{align*}
+P(V|\bm\sigma) &= \frac{P(V)\sum_{M=1}^{N} \binom{N}{M}\frac{B(M+\alpha, N-M+\beta)}{B(\alpha, \beta)}\prod_{i=1}^{N}Q(i,M) + Q^{\prime}(i,M)}{P(\bm\sigma | V)P(V) + (1-P(V))\prod_{i = 1}^{N}\binom{d_i}{\sigma_i}\frac{B(\alpha_F + \sigma_i, \beta_F + d_i - \sigma_i)}{B(\alpha_F, \beta_F)}}, \mbox{where} \\
+Q(i,M) &:= p_M P(\sigma_i|V_i, M, V) \mbox{ and} \\
+Q^{\prime}(i, M) &:= (1-p_M)^2 P(\sigma_i | \neg V_i, M, V)
+\end{align*}
+as above in equations \ref{eq:obsGivenVariant} and \ref{eq:obsGivenNoVariant}.
+\npar We are required to give input parameters for $\alpha, \beta, p_T, p_F$ and $P(V)$. As discussed above, these would ideally be discovered empirically, but for initial testing we could suggest $\alpha=1, \beta=5, p_T=0.95, p_F=0.05, P(V)=0.5$.
+\section{Discussion}
+\npar There are two aims behind this work:
+\begin{itemize}
+\item Incorporate variable depth coverage into our model.
+\item Try to increase the discriminative power at high frequencies.
+\end{itemize}
+The first of these objectives is tackled directly. Assuming I have correctly understood the second problem, we aim to tackle this through the introduction of a sensible prior over $P(M|V)$ which downweights the likelihood of true variants existing in a wide variety of samples at low coverage.
+\npar Our model involves more computation than RD's original metric; in particular, we compute a sum over all $M\in\{1,\dots,N\}$. One approach to this would be to truncate $M$ after some value (perhaps $N/2$). Another may be to search for closed form solutions, perhaps replacing the sum over $M$ with an integral over a suitable distribution on $p_M$. It depends on how large $N$ is likely to get whether this is worth it. We also need to calculate the Beta function $B$, for which suitable recourse to Stirling's approximation may be appropriate.
+\npar Much of this is cribbed from Richard Durbin's suggestion of a similar metric; errors are, of course, mine.
+\end{document}
