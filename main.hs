@@ -56,7 +56,7 @@ module Main where
       d <- decimal
       _ <- char '\t'
       o <- decimal
-      optional $ char '\t'
+      _ <- optional $ char '\t'
       return $ Sample (o, o+d)
     
   parseSite :: Parser Site

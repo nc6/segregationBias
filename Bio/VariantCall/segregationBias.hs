@@ -14,7 +14,7 @@ module Bio.VariantCall.SegregationBias (
   import Debug.Trace (traceShow, trace)
 
   import qualified Numeric.Integration.TanhSinh as I (absolute, parTrap, result)
-  import Numeric.SpecFunctions (choose, incompleteBeta)
+  import Numeric.SpecFunctions (choose, logBeta)
 
   import qualified Statistics.Distribution as D
   import Statistics.Distribution.BetaBinomial (betaBinomialDistr)
@@ -27,7 +27,7 @@ module Bio.VariantCall.SegregationBias (
     , Data.Vector.Generic.Base.Vector Vector
     , Data.Vector.Generic.Mutable.MVector V.MVector
     , V.Unbox
-    )
+  )
 
   -- | Site chr id samples
   data Site = Site Int Int (Vector Sample) deriving (Eq, Show)
@@ -49,7 +49,8 @@ module Bio.VariantCall.SegregationBias (
   probObsVariantHNR :: Probability -- ^ p_T
           -> AlleleCount -- ^ Total allele count (d)
           -> AlleleCount -- ^ Variant allele count (o)
-          -> Probability -- ^ Probability of observing a variant allele given that the individual is probObsVariantHNR
+          -> Probability -- ^ Probability of observing a variant allele given that 
+                         --   the individual is HNR
   probObsVariantHNR p_T d o = D.probability binDist o where
     binDist = binomial d p_T
 
@@ -61,15 +62,15 @@ module Bio.VariantCall.SegregationBias (
           -> Probability -- ^ Probability of observing a variant allele given that the individual is het
   probObsVariantHet _ _ _ 0 0 = 1
   probObsVariantHet _ _ _ 0 _ = 0
-  probObsVariantHet p_T a_F b_F d o = int * (d `choose` o) / 
-    ((2 ^ (d - 1)) * (incompleteBeta a_F b_F 1)) where
-      o' = fromIntegral o
-      d' = fromIntegral d
-      int = I.result . I.absolute 1e-6 $ I.parTrap fun 0 1
-      fun p_F =    (p_T + p_F)**o'
-                 * (1 - p_T - p_F)**(d' - o')
-                 * (2*p_F-p_T)**(a_F -1)
-                 * (1+p_T-2*p_F)**(b_F -1)
+  probObsVariantHet p_T a_F b_F d o = trace ("Integral: " ++ (show int)) $ traceShow result $result where
+    result = (d `choose` o) * int / ((2 ^ (d - 1)) * (exp $ logBeta a_F b_F))
+    o' = fromIntegral o
+    d' = fromIntegral d
+    int = I.result . I.absolute 1e-6 $ I.parTrap fun 0 1
+    fun p_F =    (p_T + p_F)**o'
+               * (1 - p_T - p_F)**(d' - o')
+               * (2*p_F-p_T)**(a_F -1)
+               * (1+p_T-2*p_F)**(b_F -1)
 
   -- | Calculate the probability of observing a variant allele at a given site given that the indivudual
   -- is homogenous reference.
@@ -114,7 +115,7 @@ module Bio.VariantCall.SegregationBias (
     b_F = optFalseVariantRateBeta opts
     a = optVariantSitesAlpha opts
     b = optVariantSitesBeta opts
-    foo = map (\m -> (probMGivenV n m a b)*(bar m)) [1 .. n]
+    foo = map (\m -> (probMGivenV n m a b)*(bar m)) [0 .. n]
     bar m = V.product $ V.map (\(Sample (o,d)) -> baz m d o) samples
     baz m d o = let pm = (fromIntegral m) / (2*(fromIntegral n)) in
                 pm * (probObsGivenVariantSite pm p_t a_F b_F d o) + 
@@ -134,7 +135,7 @@ module Bio.VariantCall.SegregationBias (
                       -> Vector Sample
                       -> Probability
   probVariantGivenObs opts samples = 
-    traceShow (prior, likelihood, unlikelihood, probability) $ (prior * likelihood) / probability where
+   (prior * likelihood) / probability where
       prior = optVariantFreq opts
       likelihood = probObsGivenVariant opts samples
       unlikelihood = probObsGivenNonVariant opts samples
