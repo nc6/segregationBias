@@ -13,6 +13,7 @@ module Main where
   import Data.Conduit
   import qualified Data.Conduit.Binary as CB
   import qualified Data.Conduit.List as CL
+  import Data.Conduit.Zlib
 
   --import Debug.Trace (traceShow)
 
@@ -70,9 +71,9 @@ module Main where
     samples <- many1 parseSample
     return $ Site (chr) (id') (V.fromList samples)
 
-  processLine :: Options -> B.ByteString -> Either String Double
+  processLine :: Options -> B.ByteString -> Either String (Int, Double)
   processLine opts bs = liftM go $ parseOnly parseSite bs
-    where go (Site _ _ samples) = probVariantGivenObs opts samples
+    where go (Site _ id' samples) = (id', probVariantGivenObs opts samples)
 
   main :: IO ()
   main = do
@@ -83,10 +84,10 @@ module Main where
   
   processFile :: String -> Options -> IO ()
   processFile fn opts = let
-      source = CB.sourceFile fn $= CB.lines
+      source = CB.sourceFile fn $= ungzip $= CB.lines
       process = CL.map $ processLine opts
       sink = CL.mapM_ $ liftIO . showResult
       showResult = \case
-        Right a -> putStrLn $ show a
+        Right (id', a) -> putStrLn $ show id' ++ "\t" ++ show a
         Left b -> putStrLn $ "Error: " ++ b
     in runResourceT $ source $= process $$ sink
