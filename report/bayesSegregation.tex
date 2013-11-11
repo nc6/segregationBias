@@ -58,7 +58,7 @@ P(\sigma_i | V_i,M,V,\mathrm{HNR}) &= \binom{d_i}{\sigma_i}(p_T)^{\sigma_i}(1-p_
 \end{align*}
 \npar Unfortunately, the affine transformation to $p_F$ destroys the nice properties of having a Beta prior, and so this does not so readily accept the prior over $p_F$ in a nice form. We are instead left with the following for a heterozygous individual:
 \[
-P(\sigma_i | V_i,M,V,\mathrm{HET}) = \frac{1}{2^{d_i -1} B(\alpha_F, \beta_F)}\binom{d_i}{\sigma_i}\int_{p_F}\! (p_T + p_F)^{\sigma_i}(1-p_T-p_F)^{d_i - \sigma_i}(2p_F -p_T)^{\alpha_F -1}(1+p_T-2p_F)^{\beta_F -1}\, \mathrm{d} p_F.
+P(\sigma_i | V_i,M,V,\mathrm{HET}) = \frac{1}{2^{d_i} B(\alpha_F, \beta_F)}\binom{d_i}{\sigma_i}\int_{p_F}\! (p_T + p_F)^{\sigma_i}(1-p_T-p_F)^{d_i - \sigma_i}p_F^{\alpha_F -1}(1 - p_F)^{\beta_F -1}\, \mathrm{d} p_F.
 \]
 \npar We may instead choose to take a MAP estimator for $p_F$ at each sample $i$.
 
