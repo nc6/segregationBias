@@ -3,12 +3,13 @@
 module Main where
   import Bio.VariantCall.SegregationBias
 
+  import qualified Codec.Compression.GZip as GZ (compress, decompress)
   import Control.Applicative (optional)
   import Control.Monad
-  import Control.Monad.IO.Class
 
   import Data.Attoparsec.ByteString.Char8
   import qualified Data.ByteString.Char8 as B
+  import qualified Data.ByteString.Lazy.Char8 as LB
   import qualified Data.Vector.Unboxed as V
   import Data.Conduit
   import qualified Data.Conduit.Binary as CB
@@ -79,15 +80,25 @@ module Main where
   main = do
     args <- getArgs
     case (getOpt Permute options args) of
-      (o,[f],[]) -> processFile f (foldl (flip id) defaultOptions o)
+      (o,[f,g],[]) -> processFile f g (foldl (flip id) defaultOptions o)
       (_,_,errs) -> putStrLn (concat errs ++ "\n" ++ usage)
   
-  processFile :: String -> Options -> IO ()
-  processFile fn opts = let
+  processFileLazy :: String -> String -> Options -> IO ()
+  processFileLazy inFile outFile opts = let
+      showResult = \case
+        Right (id', a) -> show id' ++ "\t" ++ show a
+        Left b -> "Error: " ++ b
+    in do
+      input <- liftM (LB.lines . GZ.decompress) $ LB.readFile inFile
+      let output = map (LB.pack . showResult . processLine opts . B.concat . LB.toChunks) input
+      LB.writeFile outFile . GZ.compress . LB.unlines $ output
+
+  processFile :: String -> String -> Options -> IO ()
+  processFile fn outfile opts = let
       source = CB.sourceFile fn $= ungzip $= CB.lines
       process = CL.map $ processLine opts
-      sink = CL.mapM_ $ liftIO . showResult
+      sink = CL.map (B.pack . showResult) =$ gzip =$ CB.sinkFile outfile
       showResult = \case
-        Right (id', a) -> putStrLn $ show id' ++ "\t" ++ show a
-        Left b -> putStrLn $ "Error: " ++ b
+        Right (id', a) -> show id' ++ "\t" ++ show a ++ "\n"
+        Left b -> "Error: " ++ b ++ "\n"
     in runResourceT $ source $= process $$ sink
