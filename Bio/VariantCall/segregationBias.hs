@@ -108,14 +108,14 @@ module Bio.VariantCall.SegregationBias (
   probObsGivenVariant :: Options
                       -> Vector Sample
                       -> Probability
-  probObsGivenVariant opts samples = sum foo where
+  probObsGivenVariant opts samples = V.sum foo where
     n = V.length samples
     p_t = optTrueVariantRate opts
     a_F = optFalseVariantRateAlpha opts
     b_F = optFalseVariantRateBeta opts
     a = optVariantSitesAlpha opts
     b = optVariantSitesBeta opts
-    foo = map (\m -> (probMGivenV n m a b)*(bar m)) [0 .. n]
+    foo = V.map (\m -> (probMGivenV n m a b)*(bar m)) $ V.enumFromN 0 (n+1)
     bar m = V.product $ V.map (\(Sample (o,d)) -> baz m d o) samples
     baz m d o = let pm = (fromIntegral m) / (2*(fromIntegral n)) in
                 pm * (probObsGivenVariantSite pm p_t a_F b_F d o) + 
