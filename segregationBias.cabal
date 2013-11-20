@@ -24,7 +24,8 @@ executable segbias
                      , conduit
                      , vector
                      , attoparsec
-                     , integration
+                     , hmatrix
+                     , repa
                      , math-functions
                      , statistics >= 0.10.5.1
                      , transformers

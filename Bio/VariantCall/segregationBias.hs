@@ -6,6 +6,7 @@ module Bio.VariantCall.SegregationBias (
     , Site(..)
   ) where
 
+  import qualified Data.Array.Repa as A
   import Data.Vector.Unboxed (Vector)
   import qualified Data.Vector.Unboxed as V
   import qualified Data.Vector.Generic.Base
@@ -13,7 +14,7 @@ module Bio.VariantCall.SegregationBias (
 
   --import Debug.Trace (traceShow, trace)
 
-  import qualified Numeric.Integration.TanhSinh as I (absolute, parTrap, result)
+  import qualified Numeric.GSL as I
   import Numeric.SpecFunctions (choose, logBeta)
 
   import qualified Statistics.Distribution as D
@@ -66,7 +67,7 @@ module Bio.VariantCall.SegregationBias (
     result = (d `choose` o) * int / ((2 ^ d) * (exp $ logBeta a_F b_F))
     o' = fromIntegral o
     d' = fromIntegral d
-    int = I.result . I.absolute 1e-6 $ I.parTrap fun 0 1
+    int = snd $ I.integrateQNG 1e-6 fun 0 1
     fun p_F =    (p_T + p_F)**o'
                * (1 - p_T - p_F)**(d' - o')
                * (p_F)**(a_F -1)
@@ -108,14 +109,15 @@ module Bio.VariantCall.SegregationBias (
   probObsGivenVariant :: Options
                       -> Vector Sample
                       -> Probability
-  probObsGivenVariant opts samples = V.sum foo where
+  probObsGivenVariant opts samples = (A.sumS foo) A.! (A.Z) where
     n = V.length samples
     p_t = optTrueVariantRate opts
     a_F = optFalseVariantRateAlpha opts
     b_F = optFalseVariantRateBeta opts
     a = optVariantSitesAlpha opts
     b = optVariantSitesBeta opts
-    foo = V.map (\m -> (probMGivenV n m a b)*(bar m)) $ V.enumFromN 0 (n+1)
+    arrN = A.fromUnboxed (A.Z A.:. (n::Int)) (V.enumFromN 0 (n+1))
+    foo = A.map (\m -> (probMGivenV n m a b)*(bar m)) arrN 
     bar m = V.product $ V.map (\(Sample (o,d)) -> baz m d o) samples
     baz m d o = let pm = (fromIntegral m) / (2*(fromIntegral n)) in
                 pm * (probObsGivenVariantSite pm p_t a_F b_F d o) + 
